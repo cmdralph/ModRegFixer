@@ -142,7 +142,7 @@ public final class ServerCapabilities {
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	private static Optional<Registry<?>> lookupRegistry(RegistryAccess registries, ResourceKey<? extends Registry<?>> key) {
-		return (Optional) registries.lookup((ResourceKey) key);
+		return registries.lookup((ResourceKey) key);
 	}
 
 	private static <T> void collectTagNamespaces(Registry<T> registry, Set<String> out) {

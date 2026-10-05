@@ -7,7 +7,6 @@ import java.util.stream.Stream;
 
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.core.HolderOwner;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
@@ -105,13 +104,9 @@ public final class RecordingLookupProvider implements HolderLookup.Provider {
 			return result;
 		}
 
-		/**
-		 * Holders keep their real owner, so serialization checks must be answered by the real
-		 * registry. Declared explicitly because 26.1's {@code Delegate} does not forward it.
-		 */
-		@Override
-		public boolean canSerialize(HolderOwner<T> holderOwner) {
-			return parent.canSerialize(holderOwner);
-		}
+		// Holder-owner (serialization) checks are inherited from Delegate: 26.3 forwards them to the
+		// real registry, older versions behave exactly like vanilla's own filterElements() delegate.
+		// Either way only the probe sees this view, and a probe failure that is not attributable to
+		// missing content makes the guard run vanilla code against the real registries instead.
 	}
 }
