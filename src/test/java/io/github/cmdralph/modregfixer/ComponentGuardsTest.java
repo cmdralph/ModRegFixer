@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -19,8 +20,10 @@ import io.github.cmdralph.modregfixer.compat.FabricItemApiGuards;
 import io.github.cmdralph.modregfixer.compat.MissingReference;
 import io.github.cmdralph.modregfixer.compat.RecordingLookupProvider;
 import io.github.cmdralph.modregfixer.compat.SkippedContent;
+import io.github.cmdralph.modregfixer.mixin.ClientCommonPacketListenerImplAccessor;
 import net.fabricmc.fabric.api.item.v1.DefaultItemComponentEvents;
 import net.minecraft.SharedConstants;
+import net.minecraft.client.multiplayer.RegistryDataCollector;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistryAccess;
@@ -61,12 +64,27 @@ class ComponentGuardsTest {
 
 	private static HolderLookup.Provider vanillaServer;
 
+	/** Gate for the Fabric MODIFY listener below; Fabric events cannot be unregistered. */
+	private static volatile boolean modifyListenerArmed;
+
 	@BeforeAll
 	static void bootstrap() {
 		SharedConstants.tryDetectVersion();
 		Bootstrap.bootStrap();
 		vanillaServer = vanillaRegistries();
-		// Bind vanilla's own components once, like the game does on start-up.
+
+		// A mod adding an optional component to a vanilla item, using content only its own datapack has.
+		DefaultItemComponentEvents.MODIFY.register(context -> context.modify(Items.STICK, (builder, registries, item) -> {
+			if (modifyListenerArmed) {
+				builder.set(DataComponents.PROVIDES_TRIM_MATERIAL, registries.getOrThrow(BOP_ROSE_QUARTZ));
+			}
+		}));
+
+		bindVanillaComponents();
+	}
+
+	/** Binds vanilla's own components, like the game does on start-up. */
+	private static void bindVanillaComponents() {
 		BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(vanillaServer).forEach(DataComponentInitializers.PendingComponents::apply);
 	}
 
@@ -179,6 +197,70 @@ class ComponentGuardsTest {
 		assertEquals(7, stickComponents.get().get(DataComponents.MAX_STACK_SIZE));
 		assertFalse(stickComponents.get().has(DataComponents.PROVIDES_TRIM_MATERIAL));
 		assertEquals(2, report.skipped().size());
+	}
+
+	// -----------------------------------------------------------------------------------------
+	// End to end through the real interception point.
+	// -----------------------------------------------------------------------------------------
+
+	/**
+	 * Calls vanilla's {@code RegistryDataCollector.updateComponents(frozen, true)} (through the
+	 * mixin) exactly as a remote configuration does, but against a server that has <em>no</em>
+	 * datapack registries at all: harsher than any real server, since even vanilla's own trim
+	 * materials, damage types, block transformers and tags are missing. Every item must still
+	 * end up with a consistent component map, and Fabric's MODIFY listeners must be guarded too.
+	 */
+	@Test
+	void realUpdateComponentsSurvivesServerWithoutAnyDatapackRegistries() throws ReflectiveOperationException {
+		Method updateComponents = RegistryDataCollector.class.getDeclaredMethod("updateComponents", RegistryAccess.Frozen.class, boolean.class);
+		updateComponents.setAccessible(true);
+		RegistryAccess.Frozen staticOnly = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
+
+		modifyListenerArmed = true;
+
+		try {
+			CompatibilityManager.runCollection(new CollectionContext(true, Map.of(), Set.of()), () -> {
+				try {
+					updateComponents.invoke(null, staticOnly, true);
+				} catch (ReflectiveOperationException e) {
+					throw new AssertionError(e.getCause() != null ? e.getCause() : e);
+				}
+
+				return null;
+			});
+
+			CompatibilityReport report = CompatibilityManager.currentReport().orElseThrow();
+
+			// Components that need datapack content are gone...
+			assertFalse(Items.DIAMOND.components().has(DataComponents.PROVIDES_TRIM_MATERIAL));
+			assertFalse(Items.MUSIC_DISC_CAT.components().has(DataComponents.JUKEBOX_PLAYABLE));
+			// ...everything else is intact.
+			assertNotNull(Items.DIAMOND.components().get(DataComponents.ITEM_MODEL));
+			assertNotNull(Items.DIAMOND.components().get(DataComponents.ITEM_NAME));
+			assertEquals(64, Items.DIAMOND.components().get(DataComponents.MAX_STACK_SIZE));
+			assertEquals(1, Items.MUSIC_DISC_CAT.components().get(DataComponents.MAX_STACK_SIZE));
+
+			assertTrue(report.skipped().stream().anyMatch(entry -> entry.missing().kind() == MissingReference.Kind.REGISTRY),
+					"missing whole registries should be reported");
+			// The Fabric listener was guarded through DefaultItemComponentModifyContextMixin.
+			assertTrue(report.skipped().stream().anyMatch(entry -> entry.source() == SkippedContent.Source.FABRIC_DEFAULT_ITEM_COMPONENT_EVENT
+							&& entry.missing().equals(MissingReference.registry(Registries.TRIM_MATERIAL))),
+					() -> "Fabric MODIFY listener was not guarded: " + report.skipped());
+		} finally {
+			modifyListenerArmed = false;
+			CompatibilityManager.onDisconnect();
+			bindVanillaComponents();
+		}
+
+		// Back to "singleplayer": vanilla components are fully restored.
+		assertTrue(Items.DIAMOND.components().has(DataComponents.PROVIDES_TRIM_MATERIAL));
+		assertTrue(Items.MUSIC_DISC_CAT.components().has(DataComponents.JUKEBOX_PLAYABLE));
+	}
+
+	@Test
+	void connectionAccessorIsApplied() throws ClassNotFoundException {
+		Class<?> listener = Class.forName("net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl", false, ComponentGuardsTest.class.getClassLoader());
+		assertTrue(ClientCommonPacketListenerImplAccessor.class.isAssignableFrom(listener));
 	}
 
 	// -----------------------------------------------------------------------------------------
