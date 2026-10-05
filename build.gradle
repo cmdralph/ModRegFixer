@@ -1,0 +1,89 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+// ---------------------------------------------------------------------------
+// Minecraft version selection
+//
+// Minecraft 26.x is distributed unobfuscated, so there are no mappings and no
+// remapping step: the code compiles directly against Mojang's own names.
+// Each supported Minecraft version has a properties file in versions/ that
+// pins the exact Minecraft + Fabric API versions. Pick one with -Pmc_target=...
+// ---------------------------------------------------------------------------
+def mcTarget = providers.gradleProperty('mc_target').get()
+def targetFile = file("versions/${mcTarget}.properties")
+if (!targetFile.exists()) {
+	throw new GradleException("Unknown mc_target '${mcTarget}'. Available: " +
+			file('versions').list().findAll { it.endsWith('.properties') }.collect { it - '.properties' }.sort().join(', '))
+}
+def target = new Properties()
+targetFile.withInputStream { target.load(it) }
+
+version = "${project.mod_version}+${mcTarget}"
+group = project.maven_group
+
+base {
+	archivesName = project.archives_base_name
+}
+
+repositories {
+	// Loom adds the Mojang and Fabric repositories automatically.
+}
+
+loom {
+	mods {
+		"modregfixer" {
+			sourceSet sourceSets.main
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${target.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${target.fabric_api_version}"
+}
+
+processResources {
+	def expandProps = [
+			version             : project.version,
+			loader_version      : project.loader_version,
+			minecraft_dependency: target.minecraft_dependency,
+	]
+	inputs.properties expandProps
+
+	filesMatching("fabric.mod.json") {
+		expand expandProps
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+	it.options.encoding = 'UTF-8'
+	it.options.compilerArgs.addAll(['-Xlint:all', '-Xlint:-processing', '-Xlint:-serial'])
+}
+
+java {
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName" }
+	}
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+}
