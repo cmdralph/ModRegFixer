@@ -1,0 +1,14 @@
+{
+	"required": false,
+	"package": "io.github.cmdralph.modregfixer.mixin.fabric",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"DefaultItemComponentModifyContextMixin"
+	],
+	"injectors": {
+		"defaultRequire": 0
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

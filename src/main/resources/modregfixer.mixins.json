@@ -1,0 +1,17 @@
+{
+	"required": true,
+	"package": "io.github.cmdralph.modregfixer.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ClientCommonPacketListenerImplAccessor",
+		"DataComponentInitializersMixin",
+		"ItemPropertiesMixin",
+		"RegistryDataCollectorMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

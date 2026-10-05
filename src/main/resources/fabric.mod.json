@@ -1,0 +1,37 @@
+{
+	"schemaVersion": 1,
+	"id": "modregfixer",
+	"version": "${version}",
+	"name": "ModRegFixer",
+	"description": "Client-side compatibility layer that lets a modded Fabric client join vanilla, Paper, Folia and Velocity servers. Item components that reference content the server does not provide (for example Biomes O' Plenty trim materials and music discs) are left out for that connection only, instead of crashing the client. Singleplayer and modded servers are unaffected.",
+	"authors": [
+		"cmdralph"
+	],
+	"contact": {
+		"sources": "https://github.com/cmdralph/ModRegFixer",
+		"issues": "https://github.com/cmdralph/ModRegFixer/issues"
+	},
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"io.github.cmdralph.modregfixer.ModRegFixerClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "modregfixer.mixins.json",
+			"environment": "client"
+		},
+		{
+			"config": "modregfixer.fabric-compat.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "${minecraft_dependency}",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
