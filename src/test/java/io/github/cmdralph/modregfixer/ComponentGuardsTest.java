@@ -48,7 +48,7 @@ import org.junit.jupiter.api.Test;
  * Runs against the real Minecraft classes with ModRegFixer's mixins applied (fabric-loader-junit
  * boots Fabric Loader / Knot in a client environment).
  *
- * <p>The "server" is {@link VanillaRegistries#createWorldLookup()}: Minecraft's own built-in
+ * <p>The "server" is {@code VanillaRegistries}' lookup: Minecraft's own built-in
  * registries, i.e. exactly what a vanilla server provides, with no modded content. The modded
  * content mirrors Biomes O' Plenty 26.3.0.0.13: two trim-material items and a music disc whose
  * entries exist only in the mod's datapack.
@@ -65,7 +65,7 @@ class ComponentGuardsTest {
 	static void bootstrap() {
 		SharedConstants.tryDetectVersion();
 		Bootstrap.bootStrap();
-		vanillaServer = VanillaRegistries.createWorldLookup();
+		vanillaServer = vanillaRegistries();
 		// Bind vanilla's own components once, like the game does on start-up.
 		BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(vanillaServer).forEach(DataComponentInitializers.PendingComponents::apply);
 	}
@@ -195,8 +195,8 @@ class ComponentGuardsTest {
 		AtomicReference<Boolean> skipMissing = new AtomicReference<>();
 		AtomicReference<Boolean> skipPresent = new AtomicReference<>();
 		CompatibilityReport report = remoteBuild(() -> {
-			skipMissing.set(FabricItemApiGuards.shouldSkip(needsBopTrim, vanillaServer, Items.AMETHYST_SHARD));
-			skipPresent.set(FabricItemApiGuards.shouldSkip(vanillaOnly, vanillaServer, Items.AMETHYST_SHARD));
+			skipMissing.set(FabricItemApiGuards.shouldSkip(needsBopTrim, vanillaServer, Items.STICK));
+			skipPresent.set(FabricItemApiGuards.shouldSkip(vanillaOnly, vanillaServer, Items.STICK));
 		});
 
 		assertTrue(skipMissing.get());
@@ -204,14 +204,14 @@ class ComponentGuardsTest {
 		assertEquals(1, report.skipped().size());
 		assertEquals(SkippedContent.Source.FABRIC_DEFAULT_ITEM_COMPONENT_EVENT, report.skipped().getFirst().source());
 		// The probe never touched the item itself.
-		assertFalse(Items.AMETHYST_SHARD.components().has(DataComponents.PROVIDES_TRIM_MATERIAL));
+		assertFalse(Items.STICK.components().has(DataComponents.PROVIDES_TRIM_MATERIAL));
 	}
 
 	@Test
 	void fabricListenersAreUntouchedOutsideRemoteBuild() {
 		DefaultItemComponentEvents.ModifyConsumer needsBopTrim = (builder, registries, item) ->
 				builder.set(DataComponents.PROVIDES_TRIM_MATERIAL, registries.getOrThrow(BOP_ROSE_QUARTZ));
-		assertFalse(FabricItemApiGuards.shouldSkip(needsBopTrim, vanillaServer, Items.AMETHYST_SHARD));
+		assertFalse(FabricItemApiGuards.shouldSkip(needsBopTrim, vanillaServer, Items.STICK));
 	}
 
 	// -----------------------------------------------------------------------------------------
@@ -234,6 +234,24 @@ class ComponentGuardsTest {
 	// -----------------------------------------------------------------------------------------
 	// Helpers
 	// -----------------------------------------------------------------------------------------
+
+	/**
+	 * Minecraft's built-in (vanilla datapack) registries. The factory is named
+	 * {@code createWorldLookup} in 26.3 and {@code createLookup} in 26.1/26.2.
+	 */
+	private static HolderLookup.Provider vanillaRegistries() {
+		for (String name : List.of("createWorldLookup", "createLookup")) {
+			try {
+				return (HolderLookup.Provider) VanillaRegistries.class.getMethod(name).invoke(null);
+			} catch (NoSuchMethodException ignored) {
+				// try the next name
+			} catch (ReflectiveOperationException e) {
+				throw new AssertionError("VanillaRegistries." + name + " failed", e);
+			}
+		}
+
+		throw new AssertionError("No VanillaRegistries lookup factory found");
+	}
 
 	/** Runs {@code action} the way Minecraft runs a remote server's component update. */
 	private static CompatibilityReport remoteBuild(Runnable action) {
